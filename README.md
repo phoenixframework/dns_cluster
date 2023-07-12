@@ -20,7 +20,7 @@ tree in your `application.ex`:
 ```elixir
 children = [
   {Phoenix.PubSub, ...},
-  {DNSCluster, query: Application.get_env(:my_app, :dns_cluster_query) || :ignore}
+  {DNSCluster, query: Application.get_env(:my_app, :dns_cluster_query) || :ignore},
   MyAppWeb.Endpoint
 ]
 ```
