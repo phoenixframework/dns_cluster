@@ -25,4 +25,10 @@ children = [
 ]
 ```
 
+If you are deploying with Elixir releases, you may consider setting these environment variables
+in your `rel/env.sh.eex`:
 
+```sh
+# run distribution across hosts
+export RELEASE_DISTRIBUTION=name
+```
