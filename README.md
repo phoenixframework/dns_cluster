@@ -31,7 +31,4 @@ in your `rel/env.sh.eex`:
 ```sh
 # run distribution across hosts
 export RELEASE_DISTRIBUTION=name
-
-# set if nodes are connected with IPv6
-export ERL_AFLAGS="-proto_dist inet6_tcp"
 ```
