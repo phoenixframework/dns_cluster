@@ -74,18 +74,18 @@ defmodule DNSCluster do
         :ignore
 
       {:ok, query} when is_binary(query) ->
+        warn_on_invalid_dist()
         resolver = Keyword.get(opts, :resolver, Resolver)
 
-        state =
-          %{
-            interval: Keyword.get(opts, :interval, 5_000),
-            basename: resolver.basename(node()),
-            query: query,
-            log: Keyword.get(opts, :log, false),
-            poll_timer: nil,
-            connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
-            resolver: resolver
-          }
+        state = %{
+          interval: Keyword.get(opts, :interval, 5_000),
+          basename: resolver.basename(node()),
+          query: query,
+          log: Keyword.get(opts, :log, false),
+          poll_timer: nil,
+          connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
+          resolver: resolver
+        }
 
         {:ok, state, {:continue, :discover_ips}}
 
@@ -149,5 +149,43 @@ defmodule DNSCluster do
     |> Enum.flat_map(&resolver.lookup(query, &1))
     |> Enum.uniq()
     |> Enum.map(&to_string(:inet.ntoa(&1)))
+  end
+
+  defp warn_on_invalid_dist do
+    release? = System.get_env("RELEASE_NAME")
+    %{started: started} = net_state = :net_kernel.get_state()
+
+    cond do
+      started == :no && release? ->
+        Logger.warn("""
+        node not running in distributed mode. Ensure the following exports are sent in your rel/env.sh.eex file:
+
+            #!/bin/sh
+
+            export RELEASE_DISTRIBUTION=name
+            export RELEASE_NODE="myapp@fully-qualified-host-or-ip"
+        """)
+
+      started == :no || (!release? && started != :no && net_state[:name_domain] != :longnames) ->
+        Logger.warn("""
+        node not running in distributed mode. When running outside of a release, you must start net_kernel manually with
+        longnames.
+        https://www.erlang.org/doc/man/net_kernel.html#start-2
+        """)
+
+      net_state[:name_domain] != :longnames && release? ->
+        Logger.warn("""
+        node not running with longnames which are required for DNS discovery.
+        Ensure the following exports are sent in your rel/env.sh.eex file:
+
+            #!/bin/sh
+
+            export RELEASE_DISTRIBUTION=name
+            export RELEASE_NODE="myapp@fully-qualified-host-or-ip"
+        """)
+
+      true ->
+        :ok
+    end
   end
 end

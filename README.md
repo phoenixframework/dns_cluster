@@ -14,7 +14,7 @@ def deps do
 end
 ```
 
-Next, you can configure and start the cluster by adding it to your supservision
+Next, you can configure and start the cluster by adding it to your supervision
 tree in your `application.ex`:
 
 ```elixir
@@ -25,10 +25,12 @@ children = [
 ]
 ```
 
-If you are deploying with Elixir releases, you may consider setting these environment variables
-in your `rel/env.sh.eex`:
+If you are deploying with Elixir releases, the release must be set to support longnames and
+the node must be named. These can be set in your `rel/env.sh.eex` file:
 
 ```sh
-# run distribution across hosts
+#!/bin/sh
+
 export RELEASE_DISTRIBUTION=name
+export RELEASE_NODE="myapp@fully-qualified-host-or-ip"
 ```
