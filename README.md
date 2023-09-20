@@ -34,13 +34,3 @@ the node must be named. These can be set in your `rel/env.sh.eex` file:
 export RELEASE_DISTRIBUTION=name
 export RELEASE_NODE="myapp@fully-qualified-host-or-ip"
 ```
-
-Also, don't forget to set your inter-node cookie or clustering will not work. If using Elixir 
-releases, you can also add to `rel/env.sh.eex`:
-
-```sh
-#!/bin/sh
-
-...
-export RELEASE_COOKIE="my-app-cookie"
-```
