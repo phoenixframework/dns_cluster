@@ -42,5 +42,5 @@ releases, you can also add to `rel/env.sh.eex`:
 #!/bin/sh
 
 ...
-export RELEASE_COOKIE = "my-app-cookie"
+export RELEASE_COOKIE="my-app-cookie"
 ```
