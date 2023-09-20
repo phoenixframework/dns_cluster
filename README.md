@@ -30,17 +30,16 @@ the node must be named. These can be set in your `rel/env.sh.eex` file:
 
 ```sh
 #!/bin/sh
-
 export RELEASE_DISTRIBUTION=name
 export RELEASE_NODE="myapp@fully-qualified-host-or-ip"
 ```
 
-Also, don't forget to set your inter-node cookie or clustering will not work. If using Elixir 
-releases, you can also add to `rel/env.sh.eex`:
+By default, nodes from the same release will have the same cookie. If you want different
+applications or releases to connect to each other, then you must set the `RELEASE_COOKIE`,
+either in your deployment platform or inside `rel/env.sh.eex`:
 
 ```sh
 #!/bin/sh
-
 ...
 export RELEASE_COOKIE="my-app-cookie"
 ```
