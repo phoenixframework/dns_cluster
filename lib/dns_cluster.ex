@@ -128,7 +128,7 @@ defmodule DNSCluster do
             log(state, "#{node()} connected to #{new_name}")
           end
         end,
-        max_concurrency: length(ips),
+        max_concurrency: max(1, length(ips)),
         timeout: timeout
       )
       |> Enum.to_list()
