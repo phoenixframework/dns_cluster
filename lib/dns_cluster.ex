@@ -51,6 +51,8 @@ defmodule DNSCluster do
     * `:name` - the name of the cluster. Defaults to `DNSCluster`.
     * `:query` - the required DNS query for node discovery, for example: `"myapp.internal"`.
       The value `:ignore` can be used to ignore starting the DNSCluster.
+    * `:host` - a function that returns the host for a given ip address.
+      Defaults to the ip address itself.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
       Defaults to `10_000`.
@@ -84,7 +86,8 @@ defmodule DNSCluster do
           log: Keyword.get(opts, :log, false),
           poll_timer: nil,
           connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
-          resolver: resolver
+          resolver: resolver,
+          host: Keyword.get(opts, :host, fn ip -> ip end)
         }
 
         {:ok, state, {:continue, :discover_ips}}
@@ -113,14 +116,15 @@ defmodule DNSCluster do
     |> schedule_next_poll()
   end
 
-  defp connect_new_nodes(%{resolver: resolver, connect_timeout: timeout} = state) do
+  defp connect_new_nodes(state) do
+    %{resolver: resolver, connect_timeout: timeout, host: host} = state
     node_names = for name <- resolver.list_nodes(), into: MapSet.new(), do: to_string(name)
 
     ips = discover_ips(state)
 
     _results =
       ips
-      |> Enum.map(fn ip -> "#{state.basename}@#{ip}" end)
+      |> Enum.map(fn ip -> "#{state.basename}@#{host.(ip)}" end)
       |> Enum.filter(fn node_name -> !Enum.member?(node_names, node_name) end)
       |> Task.async_stream(
         fn new_name ->
