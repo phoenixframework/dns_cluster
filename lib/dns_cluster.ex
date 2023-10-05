@@ -57,7 +57,7 @@ defmodule DNSCluster do
 
     * `:name` - the name of the cluster. Defaults to `DNSCluster`.
     * `:query` - the required DNS query for node discovery, for example:
-      `"myapp.internal"` or `["bar.internal", "bar.internal"]`.
+      `"myapp.internal"` or `["foo.internal", "bar.internal"]`.
       The value `:ignore` can be used to ignore starting the DNSCluster.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
