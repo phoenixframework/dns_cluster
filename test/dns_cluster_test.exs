@@ -55,6 +55,24 @@ defmodule DNSClusterTest do
     refute_receive _
   end
 
+  test "discovers nodes with a list of queries", config do
+    Process.register(self(), __MODULE__)
+
+    {:ok, cluster} =
+      start_supervised(
+        {DNSCluster, name: config.test, query: ["app.internal"], resolver: __MODULE__}
+      )
+
+    wait_for_node_discovery(cluster)
+
+    {:ok, cluster: cluster}
+    new_node = :"app@#{@ips.new}"
+    no_connect_node = :"app@#{@ips.no_connect_diff_base}"
+    assert_receive {:try_connect, ^new_node}
+    refute_receive {:try_connect, ^no_connect_node}
+    refute_receive _
+  end
+
   test "query with :ignore does not start child" do
     assert DNSCluster.start_link(query: :ignore) == :ignore
   end
