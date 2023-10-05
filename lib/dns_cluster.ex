@@ -56,7 +56,8 @@ defmodule DNSCluster do
   ## Options
 
     * `:name` - the name of the cluster. Defaults to `DNSCluster`.
-    * `:query` - the required DNS query for node discovery, for example: `"myapp.internal"`.
+    * `:query` - the required DNS query for node discovery, for example:
+      `"myapp.internal"` or `["bar.internal", "bar.internal"]`.
       The value `:ignore` can be used to ignore starting the DNSCluster.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
@@ -80,14 +81,14 @@ defmodule DNSCluster do
       {:ok, :ignore} ->
         :ignore
 
-      {:ok, query} when is_binary(query) ->
+      {:ok, query} when is_binary(query) or is_list(query) ->
         warn_on_invalid_dist()
         resolver = Keyword.get(opts, :resolver, Resolver)
 
         state = %{
           interval: Keyword.get(opts, :interval, 5_000),
           basename: resolver.basename(node()),
-          query: query,
+          query: List.wrap(query),
           log: Keyword.get(opts, :log, false),
           poll_timer: nil,
           connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
@@ -97,7 +98,8 @@ defmodule DNSCluster do
         {:ok, state, {:continue, :discover_ips}}
 
       {:ok, other} ->
-        raise ArgumentError, "expected :query to be a string, got: #{inspect(other)}"
+        raise ArgumentError,
+              "expected :query to be a string or list of strings, got: #{inspect(other)}"
 
       :error ->
         raise ArgumentError, "missing required :query option in #{inspect(opts)}"
@@ -153,7 +155,9 @@ defmodule DNSCluster do
 
   defp discover_ips(%{resolver: resolver, query: query}) do
     [:a, :aaaa]
-    |> Enum.flat_map(&resolver.lookup(query, &1))
+    |> Enum.flat_map(fn type ->
+      Enum.flat_map(query, &resolver.lookup(&1, type))
+    end)
     |> Enum.uniq()
     |> Enum.map(&to_string(:inet.ntoa(&1)))
   end
