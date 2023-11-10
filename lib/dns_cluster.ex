@@ -158,7 +158,7 @@ defmodule DNSCluster do
     cond do
       started == :no and release? ->
         Logger.warning("""
-        node not running in distributed mode. Ensure the following exports are sent in your rel/env.sh.eex file:
+        node not running in distributed mode. Ensure the following exports are set in your rel/env.sh.eex file:
 
             #!/bin/sh
 
@@ -176,7 +176,7 @@ defmodule DNSCluster do
       net_state[:name_domain] != :longnames and release? ->
         Logger.warning("""
         node not running with longnames which are required for DNS discovery.
-        Ensure the following exports are sent in your rel/env.sh.eex file:
+        Ensure the following exports are set in your rel/env.sh.eex file:
 
             #!/bin/sh
 
