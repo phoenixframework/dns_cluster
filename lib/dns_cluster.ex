@@ -38,6 +38,11 @@ defmodule DNSCluster do
 
     def list_nodes, do: Node.list(:visible)
 
+    def lookup(query, type = :srv) when is_binary(query) do
+      :inet_res.lookup(~c"#{query}", :in, type)
+      |> Enum.map(&elem(&1, 3))
+    end
+
     def lookup(query, type) when is_binary(query) and type in [:a, :aaaa] do
       :inet_res.lookup(~c"#{query}", :in, type)
     end
@@ -145,10 +150,14 @@ defmodule DNSCluster do
   end
 
   defp discover_ips(%{resolver: resolver, query: query}) do
-    [:a, :aaaa]
+    [:a, :aaaa, :srv]
     |> Enum.flat_map(&resolver.lookup(query, &1))
     |> Enum.uniq()
-    |> Enum.map(&to_string(:inet.ntoa(&1)))
+    |> Enum.map(fn
+      {_, _, _, _} = result -> to_string(:inet.ntoa(result))
+      {_, _, _, _, _, _, _, _} = result -> to_string(:inet.ntoa(result))
+      result -> to_string(result)
+    end)
   end
 
   defp warn_on_invalid_dist do
