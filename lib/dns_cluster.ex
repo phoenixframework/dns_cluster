@@ -29,6 +29,10 @@ defmodule DNSCluster do
 
   defmodule Resolver do
     @moduledoc false
+
+    require Record
+    Record.defrecord(:hostent, Record.extract(:hostent, from_lib: "kernel/include/inet.hrl"))
+
     def basename(node_name) when is_atom(node_name) do
       [basename, _] = String.split(to_string(node_name), "@")
       basename
@@ -39,7 +43,10 @@ defmodule DNSCluster do
     def list_nodes, do: Node.list(:visible)
 
     def lookup(query, type) when is_binary(query) and type in [:a, :aaaa] do
-      :inet_res.lookup(~c"#{query}", :in, type)
+      case :inet_res.getbyname(~c"#{query}", type) do
+        {:ok, hostent(h_addr_list: addr_list)} -> addr_list
+        {:error, _} -> []
+      end
     end
   end
 
