@@ -5,24 +5,20 @@ defmodule DNSCluster do
   A DNS query is made every `:interval` milliseconds to discover new ips.
 
   ## Default node discovery
-  When specifying a query, nodes will only be joined if their node basename matches
-  the basename of the current node. For example if `node()` is `myapp-123@fdaa:1:36c9:a7b:198:c4b1:73c6:1`,
-  a `Node.connect/1` attempt will be made against every IP returned by the DNS query,
-  but will only be successful if there is a node running on the remote host with the same
-  basename, for example `myapp-123@fdaa:1:36c9:a7b:198:c4b1:73c6:2`. Nodes running on
-  remote hosts, but with different basenames will fail to connect and will be ignored.
+  When you set up a DNS query, the system tries to connect to nodes with the same basename
+  as the local node. For example, if `node()` is `myapp-123@fdaa:1:36c9:a7b:198:c4b1:73c6:1`,
+  it will try to connect to every IP from the DNS query with `Node.connect/1`. But this will only
+  work if the remote node has the same basename, like `myapp-123@fdaa:1:36c9:a7b:198:c4b1:73c6:2`.
+  If the remote node's basename is different, the connection won't happen.
 
   ## Specifying remote basenames
-  To cluster nodes with differing basenames, specify `{basename, query}`. For example,
-  if the remote host has a node running with basename `remoteapp`, pass a tuple of
-  `{"remoteapp", "remote-app.internal"}`.
+  If you want to connect to nodes with different basenames, use a tuple with the basename and query.
+  For example, to connect to a node named `remote`, use `{"remote", "remote-app.internal"}`.
 
   ## Multiple queries
-  There are situations where you may want to cluster applications having differing
-  domain names. Simply pass a list of queries to connect to all Nodes, e.g.
-  `["app-one.internal", "app-two.internal", {"other-basename", "other.internal"}]`.
-  All rules for Node clustering still apply, so make sure that all Nodes share a
-  secret cookie, otherwise the nodes will fail to connect.
+  Sometimes you might want to cluster apps with different domain names. Just pass a list of queries
+  for this. For instance: `["app-one.internal", "app-two.internal", {"other-basename", "other.internal"}]`.
+  Remember, all nodes need to share the same secret cookie to connect successfully.
 
   ## Examples
 
