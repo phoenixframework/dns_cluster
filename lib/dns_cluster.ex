@@ -189,14 +189,15 @@ defmodule DNSCluster do
     |> Enum.map(fn {basename, addr} -> {basename, to_string(:inet.ntoa(addr))} end)
   end
 
-  defp valid_query?(string) when is_binary(string), do: true
-  defp valid_query?({basename, query}) when is_binary(basename) and is_binary(query), do: true
-
-  defp valid_query?(list) when is_list(list) do
-    Enum.all?(list, &valid_query?/1)
+  defp valid_query?(list) do
+    list
+    |> List.wrap()
+    |> Enum.all?(fn
+      string when is_binary(string) -> true
+      {basename, query} when is_binary(basename) and is_binary(query) -> true
+      _ -> false
+    end)
   end
-
-  defp valid_query?(_), do: false
 
   defp warn_on_invalid_dist do
     release? = is_binary(System.get_env("RELEASE_NAME"))

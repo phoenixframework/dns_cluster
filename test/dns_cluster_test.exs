@@ -104,4 +104,39 @@ defmodule DNSClusterTest do
   test "query with :ignore does not start child" do
     assert DNSCluster.start_link(query: :ignore) == :ignore
   end
+
+  describe "query forms" do
+    test "query can be a string", config do
+      assert {:ok, _cluster} =
+               start_supervised(
+                 {DNSCluster, name: config.test, query: "app.internal", resolver: __MODULE__}
+               )
+    end
+
+    test "query can be a {basename, query}", config do
+      assert {:ok, _cluster} =
+               start_supervised(
+                 {DNSCluster,
+                  name: config.test, query: {"basename", "app.internal"}, resolver: __MODULE__}
+               )
+    end
+
+    test "query can be a list", config do
+      assert {:ok, _cluster} =
+               start_supervised(
+                 {DNSCluster,
+                  name: config.test,
+                  query: ["query", {"basename", "app.internal"}],
+                  resolver: __MODULE__}
+               )
+    end
+
+    test "query can't be other terms", config do
+      for bad <- [1234, :atom, %{a: 1}, [["query"]]] do
+        assert_raise RuntimeError, ~r/expected :query to be a string/, fn ->
+          start_supervised!({DNSCluster, name: config.test, query: bad, resolver: __MODULE__})
+        end
+      end
+    end
+  end
 end
