@@ -3,12 +3,22 @@ defmodule DNSCluster do
   Simple DNS based cluster discovery.
 
   A DNS query is made every `:interval` milliseconds to discover new ips.
-  Nodes will only be joined if their node basename matches the basename of the
-  current node. For example if `node()` is `myapp-123@fdaa:1:36c9:a7b:198:c4b1:73c6:1`,
-  a `Node.connect/1` attempt will be made against every IP returned by the DNS query,
-  but will only be successful if there is a node running on the remote host with the same
-  basename, for example `myapp-123@fdaa:1:36c9:a7b:198:c4b1:73c6:2`. Nodes running on
-  remote hosts, but with different basenames will fail to connect and will be ignored.
+
+  ## Default node discovery
+  Nodes will only be joined if their node basename matches the basename of the current node.
+  For example, if `node()` is `myapp-123@fdaa:1:36c9:a7b:198:c4b1:73c6:1`, it will try to connect
+  to every IP from the DNS query with `Node.connect/1`. But this will only work if the remote node
+  has the same basename, like `myapp-123@fdaa:1:36c9:a7b:198:c4b1:73c6:2`. If the remote node's
+  basename is different, the nodes will not connect.
+
+  ## Specifying remote basenames
+  If you want to connect to nodes with different basenames, use a tuple with the basename and query.
+  For example, to connect to a node named `remote`, use `{"remote", "remote-app.internal"}`.
+
+  ## Multiple queries
+  Sometimes you might want to cluster apps with different domain names. Just pass a list of queries
+  for this. For instance: `["app-one.internal", "app-two.internal", {"other-basename", "other.internal"}]`.
+  Remember, all nodes need to share the same secret cookie to connect successfully.
 
   ## Examples
 
@@ -56,7 +66,9 @@ defmodule DNSCluster do
   ## Options
 
     * `:name` - the name of the cluster. Defaults to `DNSCluster`.
-    * `:query` - the required DNS query for node discovery, for example: `"myapp.internal"`.
+    * `:query` - the required DNS query for node discovery, for example:
+      `"myapp.internal"` or `["foo.internal", "bar.internal"]`. If the basename
+      differs between nodes, a tuple of `{basename, query}` can be provided as well.
       The value `:ignore` can be used to ignore starting the DNSCluster.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
@@ -80,24 +92,26 @@ defmodule DNSCluster do
       {:ok, :ignore} ->
         :ignore
 
-      {:ok, query} when is_binary(query) ->
-        warn_on_invalid_dist()
-        resolver = Keyword.get(opts, :resolver, Resolver)
+      {:ok, query} ->
+        if valid_query?(query) do
+          warn_on_invalid_dist()
+          resolver = Keyword.get(opts, :resolver, Resolver)
 
-        state = %{
-          interval: Keyword.get(opts, :interval, 5_000),
-          basename: resolver.basename(node()),
-          query: query,
-          log: Keyword.get(opts, :log, false),
-          poll_timer: nil,
-          connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
-          resolver: resolver
-        }
+          state = %{
+            interval: Keyword.get(opts, :interval, 5_000),
+            basename: resolver.basename(node()),
+            query: List.wrap(query),
+            log: Keyword.get(opts, :log, false),
+            poll_timer: nil,
+            connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
+            resolver: resolver
+          }
 
-        {:ok, state, {:continue, :discover_ips}}
-
-      {:ok, other} ->
-        raise ArgumentError, "expected :query to be a string, got: #{inspect(other)}"
+          {:ok, state, {:continue, :discover_ips}}
+        else
+          raise ArgumentError,
+                "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
+        end
 
       :error ->
         raise ArgumentError, "missing required :query option in #{inspect(opts)}"
@@ -127,7 +141,7 @@ defmodule DNSCluster do
 
     _results =
       ips
-      |> Enum.map(fn ip -> "#{state.basename}@#{ip}" end)
+      |> Enum.map(fn {basename, ip} -> "#{basename}@#{ip}" end)
       |> Enum.filter(fn node_name -> !Enum.member?(node_names, node_name) end)
       |> Task.async_stream(
         fn new_name ->
@@ -151,11 +165,38 @@ defmodule DNSCluster do
     %{state | poll_timer: Process.send_after(self(), :discover_ips, state.interval)}
   end
 
-  defp discover_ips(%{resolver: resolver, query: query}) do
+  defp discover_ips(%{resolver: resolver, query: queries} = state) do
     [:a, :aaaa]
-    |> Enum.flat_map(&resolver.lookup(query, &1))
+    |> Enum.flat_map(fn type ->
+      Enum.flat_map(queries, fn query ->
+        {basename, query} =
+          case query do
+            {basename, query} ->
+              # use the user-specified basename
+              {basename, query}
+
+            query when is_binary(query) ->
+              # no basename specified, use host basename
+              {state.basename, query}
+          end
+
+        for addr <- resolver.lookup(query, type) do
+          {basename, addr}
+        end
+      end)
+    end)
     |> Enum.uniq()
-    |> Enum.map(&to_string(:inet.ntoa(&1)))
+    |> Enum.map(fn {basename, addr} -> {basename, to_string(:inet.ntoa(addr))} end)
+  end
+
+  defp valid_query?(list) do
+    list
+    |> List.wrap()
+    |> Enum.all?(fn
+      string when is_binary(string) -> true
+      {basename, query} when is_binary(basename) and is_binary(query) -> true
+      _ -> false
+    end)
   end
 
   defp warn_on_invalid_dist do
