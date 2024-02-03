@@ -160,10 +160,13 @@ defmodule DNSCluster do
 
   defp warn_on_invalid_dist do
     release? = is_binary(System.get_env("RELEASE_NAME"))
-    %{started: started} = net_state = :net_kernel.get_state()
+    net_state = if function_exported?(:net_kernel, :get_state, 0), do: :net_kernel.get_state()
 
     cond do
-      started == :no and release? ->
+      !net_state ->
+        :ok
+
+      net_state.started == :no and release? ->
         Logger.warning("""
         node not running in distributed mode. Ensure the following exports are set in your rel/env.sh.eex file:
 
@@ -173,7 +176,8 @@ defmodule DNSCluster do
             export RELEASE_NODE="myapp@fully-qualified-host-or-ip"
         """)
 
-      started == :no or (!release? and started != :no and net_state[:name_domain] != :longnames) ->
+      net_state.started == :no or
+          (!release? and net_state.started != :no and net_state[:name_domain] != :longnames) ->
         Logger.warning("""
         node not running in distributed mode. When running outside of a release, you must start net_kernel manually with
         longnames.
