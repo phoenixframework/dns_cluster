@@ -121,9 +121,17 @@ defmodule DNSCluster do
   end
 
   defp connect_new_nodes(%{resolver: resolver, connect_timeout: timeout} = state) do
-    node_names = for name <- resolver.list_nodes(), into: MapSet.new(), do: to_string(name)
+    visible_nodes = resolver.list_nodes()
+    visible_nodes_string = Enum.join(visible_nodes, ", ")
+    log(state, "For #{node()} visible nodes: #{visible_nodes_string}")
+
+    node_names = for name <- visible_nodes, into: MapSet.new(), do: to_string(name)
 
     ips = discover_ips(state)
+
+    ips_string = Enum.join(ips, ", ")
+
+    log(state, "#{node()} discovered ips: #{ips_string}")
 
     _results =
       ips
@@ -133,6 +141,8 @@ defmodule DNSCluster do
         fn new_name ->
           if resolver.connect_node(:"#{new_name}") do
             log(state, "#{node()} connected to #{new_name}")
+          else
+            log(state, "#{node()} failed to connect #{new_name}")
           end
         end,
         max_concurrency: max(1, length(ips)),
