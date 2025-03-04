@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.0 (2025-03-04)
+  * Support multiple DNS queries
+
 ## 0.1.3 (2024-02-02)
   * Support OTP 24
 

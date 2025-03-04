@@ -1,7 +1,7 @@
 defmodule DNSCluster.MixProject do
   use Mix.Project
 
-  @version "0.1.3"
+  @version "0.2.0"
   @scm_url "https://github.com/phoenixframework/dns_cluster"
 
   def project do
