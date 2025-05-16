@@ -14,7 +14,8 @@ defmodule DNSCluster.MixProject do
       deps: deps(),
       source_url: @scm_url,
       homepage_url: @scm_url,
-      description: "Simple DNS clustering for distributed Elixir nodes"
+      description: "Simple DNS clustering for distributed Elixir nodes",
+      docs: docs()
     ]
   end
 
@@ -35,5 +36,13 @@ defmodule DNSCluster.MixProject do
 
   defp deps do
     [{:ex_doc, ">= 0.0.0", only: :docs}]
+  end
+
+  defp docs do
+    [
+      source_ref: "v#{@version}",
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md"],
+      extras: ["CHANGELOG.md"]
+    ]
   end
 end
