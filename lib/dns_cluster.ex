@@ -92,6 +92,8 @@ defmodule DNSCluster do
       `"myapp.internal"` or `["foo.internal", "bar.internal"]`. If the basename
       differs between nodes, a tuple of `{basename, query}` can be provided as well.
       The value `:ignore` can be used to ignore starting the DNSCluster.
+    * `:dns_rr_types` - the resource records types that are used for node discovery.
+      Defaults to `[:a, :aaaa, :srv]` which are all currently supported types.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
       Defaults to `10_000`.
@@ -108,14 +110,21 @@ defmodule DNSCluster do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
+  @valid_rr_types [:a, :aaaa, :srv]
+
   @impl true
   def init(opts) do
+    dns_rr_types = Keyword.get(opts, :dns_rr_types, @valid_rr_types)
+
     case Keyword.fetch(opts, :query) do
       {:ok, :ignore} ->
         :ignore
 
       {:ok, query} ->
-        if valid_query?(query) do
+        with(
+          {:valid_query?, true} <- {:valid_query?, valid_query?(query)},
+          {:valid_rr_types?, true} <- {:valid_rr_types?, valid_rr_types?(dns_rr_types)}
+        ) do
           warn_on_invalid_dist()
           resolver = Keyword.get(opts, :resolver, Resolver)
 
@@ -123,6 +132,7 @@ defmodule DNSCluster do
             interval: Keyword.get(opts, :interval, 5_000),
             basename: resolver.basename(node()),
             query: List.wrap(query),
+            dns_rr_types: dns_rr_types,
             log: Keyword.get(opts, :log, false),
             poll_timer: nil,
             connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
@@ -131,8 +141,13 @@ defmodule DNSCluster do
 
           {:ok, state, {:continue, :discover_ips}}
         else
-          raise ArgumentError,
-                "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
+          {:valid_query?, false} ->
+            raise ArgumentError,
+                  "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
+
+          {:valid_rr_types?, false} ->
+            raise ArgumentError,
+                  "expected :dns_rr_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(dns_rr_types)}"
         end
 
       :error ->
@@ -187,8 +202,8 @@ defmodule DNSCluster do
     %{state | poll_timer: Process.send_after(self(), :discover_ips, state.interval)}
   end
 
-  defp discover_ips(%{resolver: resolver, query: queries} = state) do
-    [:a, :aaaa, :srv]
+  defp discover_ips(%{resolver: resolver, query: queries, dns_rr_types: dns_rr_types} = state) do
+    dns_rr_types
     |> Enum.flat_map(fn type ->
       Enum.flat_map(queries, fn query ->
         {basename, query} =
@@ -219,6 +234,13 @@ defmodule DNSCluster do
       {basename, query} when is_binary(basename) and is_binary(query) -> true
       _ -> false
     end)
+  end
+
+  defp valid_rr_types?([]), do: false
+
+  defp valid_rr_types?(dns_rr_types) do
+    MapSet.new(dns_rr_types)
+    |> MapSet.subset?(MapSet.new(@valid_rr_types))
   end
 
   defp warn_on_invalid_dist do

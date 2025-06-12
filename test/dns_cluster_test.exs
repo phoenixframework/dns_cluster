@@ -139,4 +139,45 @@ defmodule DNSClusterTest do
       end
     end
   end
+
+  describe "dns_rr_types" do
+    test "dns_rr_types can be a subset of [:a, :aaaa, :srv]", config do
+      assert {:ok, _cluster} =
+               start_supervised(
+                 {DNSCluster,
+                  name: config.test,
+                  query: "app.internal",
+                  dns_rr_types: [:a, :srv],
+                  resolver: __MODULE__}
+               )
+    end
+
+    test "dns_rr_types can't be outside of [:a, :aaaa, :srv]", config do
+      assert_raise RuntimeError,
+                   ~r/expected :dns_rr_types to be a subset of \[:a, :aaaa, :srv\]/,
+                   fn ->
+                     start_supervised!(
+                       {DNSCluster,
+                        name: config.test,
+                        query: "app.internal",
+                        dns_rr_types: [],
+                        resolver: __MODULE__}
+                     )
+                   end
+    end
+
+    test "dns_rr_types can't be empty", config do
+      assert_raise RuntimeError,
+                   ~r/expected :dns_rr_types to be a subset of \[:a, :aaaa, :srv\]/,
+                   fn ->
+                     start_supervised!(
+                       {DNSCluster,
+                        name: config.test,
+                        query: "app.internal",
+                        dns_rr_types: [],
+                        resolver: __MODULE__}
+                     )
+                   end
+    end
+  end
 end
