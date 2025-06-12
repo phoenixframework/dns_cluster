@@ -58,6 +58,28 @@ defmodule DNSCluster do
         {:error, _} -> []
       end
     end
+
+    def lookup(query, type) when is_binary(query) and type in [:srv] do
+      case :inet_res.getbyname(~c"#{query}", type) do
+        {:ok, hostent(h_addr_list: srv_list)} ->
+          lookup_hosts(srv_list)
+
+        {:error, _} ->
+          []
+      end
+    end
+
+    defp lookup_hosts(srv_list) do
+      srv_list
+      |> Enum.map(fn {_prio, _weight, _port, host_name} ->
+        case :inet.gethostbyname(host_name) do
+          {:ok, hostent(h_addr_list: addr_list)} -> addr_list
+          {:error, _} -> []
+        end
+      end)
+      |> List.flatten()
+      |> Enum.filter(& &1)
+    end
   end
 
   @doc ~S"""
@@ -166,7 +188,7 @@ defmodule DNSCluster do
   end
 
   defp discover_ips(%{resolver: resolver, query: queries} = state) do
-    [:a, :aaaa]
+    [:a, :aaaa, :srv]
     |> Enum.flat_map(fn type ->
       Enum.flat_map(queries, fn query ->
         {basename, query} =
