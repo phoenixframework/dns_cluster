@@ -71,13 +71,12 @@ defmodule DNSCluster do
 
     defp lookup_hosts(srv_list) do
       srv_list
-      |> Enum.map(fn {_prio, _weight, _port, host_name} ->
+      |> Enum.flat_map(fn {_prio, _weight, _port, host_name} ->
         case :inet.gethostbyname(host_name) do
           {:ok, hostent(h_addr_list: addr_list)} -> addr_list
           {:error, _} -> []
         end
       end)
-      |> List.flatten()
       |> Enum.filter(& &1)
     end
   end
