@@ -121,34 +121,31 @@ defmodule DNSCluster do
         :ignore
 
       {:ok, query} ->
-        with(
-          {:valid_query?, true} <- {:valid_query?, valid_query?(query)},
-          {:valid_rr_types?, true} <- {:valid_rr_types?, valid_rr_types?(dns_rr_types)}
-        ) do
-          warn_on_invalid_dist()
-          resolver = Keyword.get(opts, :resolver, Resolver)
-
-          state = %{
-            interval: Keyword.get(opts, :interval, 5_000),
-            basename: resolver.basename(node()),
-            query: List.wrap(query),
-            dns_rr_types: dns_rr_types,
-            log: Keyword.get(opts, :log, false),
-            poll_timer: nil,
-            connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
-            resolver: resolver
-          }
-
-          {:ok, state, {:continue, :discover_ips}}
-        else
-          {:valid_query?, false} ->
-            raise ArgumentError,
-                  "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
-
-          {:valid_rr_types?, false} ->
-            raise ArgumentError,
-                  "expected :dns_rr_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(dns_rr_types)}"
+        if not valid_query?(query) do
+          raise ArgumentError,
+                "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
         end
+
+        if not valid_rr_types?(dns_rr_types) do
+          raise ArgumentError,
+                "expected :dns_rr_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(dns_rr_types)}"
+        end
+
+        warn_on_invalid_dist()
+        resolver = Keyword.get(opts, :resolver, Resolver)
+
+        state = %{
+          interval: Keyword.get(opts, :interval, 5_000),
+          basename: resolver.basename(node()),
+          query: List.wrap(query),
+          dns_rr_types: dns_rr_types,
+          log: Keyword.get(opts, :log, false),
+          poll_timer: nil,
+          connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
+          resolver: resolver
+        }
+
+        {:ok, state, {:continue, :discover_ips}}
 
       :error ->
         raise ArgumentError, "missing required :query option in #{inspect(opts)}"
@@ -239,8 +236,7 @@ defmodule DNSCluster do
   defp valid_rr_types?([]), do: false
 
   defp valid_rr_types?(dns_rr_types) do
-    MapSet.new(dns_rr_types)
-    |> MapSet.subset?(MapSet.new(@valid_rr_types))
+    dns_rr_types -- @valid_rr_types == []
   end
 
   defp warn_on_invalid_dist do
