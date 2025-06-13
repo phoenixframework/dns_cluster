@@ -77,7 +77,6 @@ defmodule DNSCluster do
           {:error, _} -> []
         end
       end)
-      |> Enum.filter(& &1)
     end
   end
 
