@@ -90,7 +90,7 @@ defmodule DNSCluster do
       `"myapp.internal"` or `["foo.internal", "bar.internal"]`. If the basename
       differs between nodes, a tuple of `{basename, query}` can be provided as well.
       The value `:ignore` can be used to ignore starting the DNSCluster.
-    * `:resource_types` - the resource records types that are used for node discovery.
+    * `:resource_types` - the resource record types that are used for node discovery.
       Defaults to `[:a, :aaaa, :srv]` which are all currently supported types.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
