@@ -90,7 +90,7 @@ defmodule DNSCluster do
       `"myapp.internal"` or `["foo.internal", "bar.internal"]`. If the basename
       differs between nodes, a tuple of `{basename, query}` can be provided as well.
       The value `:ignore` can be used to ignore starting the DNSCluster.
-    * `:dns_rr_types` - the resource records types that are used for node discovery.
+    * `:resource_types` - the resource records types that are used for node discovery.
       Defaults to `[:a, :aaaa, :srv]` which are all currently supported types.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
@@ -108,11 +108,11 @@ defmodule DNSCluster do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
-  @valid_rr_types [:a, :aaaa, :srv]
+  @valid_resource_types [:a, :aaaa, :srv]
 
   @impl true
   def init(opts) do
-    dns_rr_types = Keyword.get(opts, :dns_rr_types, @valid_rr_types)
+    resource_types = Keyword.get(opts, :resource_types, @valid_resource_types)
 
     case Keyword.fetch(opts, :query) do
       {:ok, :ignore} ->
@@ -124,9 +124,9 @@ defmodule DNSCluster do
                 "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
         end
 
-        if not valid_rr_types?(dns_rr_types) do
+        if not valid_resource_types?(resource_types) do
           raise ArgumentError,
-                "expected :dns_rr_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(dns_rr_types)}"
+                "expected :resource_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(resource_types)}"
         end
 
         warn_on_invalid_dist()
@@ -136,7 +136,7 @@ defmodule DNSCluster do
           interval: Keyword.get(opts, :interval, 5_000),
           basename: resolver.basename(node()),
           query: List.wrap(query),
-          dns_rr_types: dns_rr_types,
+          resource_types: resource_types,
           log: Keyword.get(opts, :log, false),
           poll_timer: nil,
           connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
@@ -197,8 +197,8 @@ defmodule DNSCluster do
     %{state | poll_timer: Process.send_after(self(), :discover_ips, state.interval)}
   end
 
-  defp discover_ips(%{resolver: resolver, query: queries, dns_rr_types: dns_rr_types} = state) do
-    dns_rr_types
+  defp discover_ips(%{resolver: resolver, query: queries, resource_types: resource_types} = state) do
+    resource_types
     |> Enum.flat_map(fn type ->
       Enum.flat_map(queries, fn query ->
         {basename, query} =
@@ -231,10 +231,10 @@ defmodule DNSCluster do
     end)
   end
 
-  defp valid_rr_types?([]), do: false
+  defp valid_resource_types?([]), do: false
 
-  defp valid_rr_types?(dns_rr_types) do
-    dns_rr_types -- @valid_rr_types == []
+  defp valid_resource_types?(resource_types) do
+    resource_types -- @valid_resource_types == []
   end
 
   defp warn_on_invalid_dist do
