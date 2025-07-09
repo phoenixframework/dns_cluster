@@ -9,7 +9,7 @@ The package can be installed by adding `dns_cluster` to your list of dependencie
 ```elixir
 def deps do
   [
-    {:dns_cluster, "~> 0.1.1"}
+    {:dns_cluster, "~> 0.2"}
   ]
 end
 ```
