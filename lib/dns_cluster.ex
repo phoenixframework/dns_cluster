@@ -139,20 +139,19 @@ defmodule DNSCluster do
 
     ips = discover_ips(state)
 
-    _results =
-      ips
-      |> Enum.map(fn {basename, ip} -> "#{basename}@#{ip}" end)
-      |> Enum.filter(fn node_name -> !Enum.member?(node_names, node_name) end)
-      |> Task.async_stream(
-        fn new_name ->
-          if resolver.connect_node(:"#{new_name}") do
-            log(state, "#{node()} connected to #{new_name}")
-          end
-        end,
-        max_concurrency: max(1, length(ips)),
-        timeout: timeout
-      )
-      |> Enum.to_list()
+    ips
+    |> Enum.map(fn {basename, ip} -> "#{basename}@#{ip}" end)
+    |> Enum.filter(fn node_name -> !Enum.member?(node_names, node_name) end)
+    |> Task.async_stream(
+      fn new_name ->
+        if resolver.connect_node(:"#{new_name}") do
+          log(state, "#{node()} connected to #{new_name}")
+        end
+      end,
+      max_concurrency: max(1, length(ips)),
+      timeout: timeout
+    )
+    |> Enum.to_list()
 
     state
   end
