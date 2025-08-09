@@ -58,6 +58,26 @@ defmodule DNSCluster do
         {:error, _} -> []
       end
     end
+
+    def lookup(query, type) when is_binary(query) and type in [:srv] do
+      case :inet_res.getbyname(~c"#{query}", type) do
+        {:ok, hostent(h_addr_list: srv_list)} ->
+          lookup_hosts(srv_list)
+
+        {:error, _} ->
+          []
+      end
+    end
+
+    defp lookup_hosts(srv_list) do
+      srv_list
+      |> Enum.flat_map(fn {_prio, _weight, _port, host_name} ->
+        case :inet.gethostbyname(host_name) do
+          {:ok, hostent(h_addr_list: addr_list)} -> addr_list
+          {:error, _} -> []
+        end
+      end)
+    end
   end
 
   @doc ~S"""
@@ -70,6 +90,8 @@ defmodule DNSCluster do
       `"myapp.internal"` or `["foo.internal", "bar.internal"]`. If the basename
       differs between nodes, a tuple of `{basename, query}` can be provided as well.
       The value `:ignore` can be used to ignore starting the DNSCluster.
+    * `:resource_types` - the resource record types that are used for node discovery.
+      Defaults to `[:a, :aaaa]` and also supports the `:srv` type.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
       Defaults to `10_000`.
@@ -86,32 +108,42 @@ defmodule DNSCluster do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
+  @valid_resource_types [:a, :aaaa, :srv]
+
   @impl true
   def init(opts) do
+    resource_types = Keyword.get(opts, :resource_types, [:a, :aaaa])
+
     case Keyword.fetch(opts, :query) do
       {:ok, :ignore} ->
         :ignore
 
       {:ok, query} ->
-        if valid_query?(query) do
-          warn_on_invalid_dist()
-          resolver = Keyword.get(opts, :resolver, Resolver)
-
-          state = %{
-            interval: Keyword.get(opts, :interval, 5_000),
-            basename: resolver.basename(node()),
-            query: List.wrap(query),
-            log: Keyword.get(opts, :log, false),
-            poll_timer: nil,
-            connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
-            resolver: resolver
-          }
-
-          {:ok, state, {:continue, :discover_ips}}
-        else
+        if not valid_query?(query) do
           raise ArgumentError,
                 "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
         end
+
+        if not valid_resource_types?(resource_types) do
+          raise ArgumentError,
+                "expected :resource_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(resource_types)}"
+        end
+
+        warn_on_invalid_dist()
+        resolver = Keyword.get(opts, :resolver, Resolver)
+
+        state = %{
+          interval: Keyword.get(opts, :interval, 5_000),
+          basename: resolver.basename(node()),
+          query: List.wrap(query),
+          resource_types: resource_types,
+          log: Keyword.get(opts, :log, false),
+          poll_timer: nil,
+          connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
+          resolver: resolver
+        }
+
+        {:ok, state, {:continue, :discover_ips}}
 
       :error ->
         raise ArgumentError, "missing required :query option in #{inspect(opts)}"
@@ -165,8 +197,8 @@ defmodule DNSCluster do
     %{state | poll_timer: Process.send_after(self(), :discover_ips, state.interval)}
   end
 
-  defp discover_ips(%{resolver: resolver, query: queries} = state) do
-    [:a, :aaaa]
+  defp discover_ips(%{resolver: resolver, query: queries, resource_types: resource_types} = state) do
+    resource_types
     |> Enum.flat_map(fn type ->
       Enum.flat_map(queries, fn query ->
         {basename, query} =
@@ -197,6 +229,12 @@ defmodule DNSCluster do
       {basename, query} when is_binary(basename) and is_binary(query) -> true
       _ -> false
     end)
+  end
+
+  defp valid_resource_types?([]), do: false
+
+  defp valid_resource_types?(resource_types) do
+    resource_types -- @valid_resource_types == []
   end
 
   defp warn_on_invalid_dist do
