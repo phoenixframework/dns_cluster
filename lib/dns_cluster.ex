@@ -91,7 +91,7 @@ defmodule DNSCluster do
       differs between nodes, a tuple of `{basename, query}` can be provided as well.
       The value `:ignore` can be used to ignore starting the DNSCluster.
     * `:resource_types` - the resource record types that are used for node discovery.
-      Defaults to `[:a, :aaaa, :srv]` which are all currently supported types.
+      Defaults to `[:a, :aaaa]` and also supports the `:srv` type.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
       Defaults to `10_000`.
@@ -112,7 +112,7 @@ defmodule DNSCluster do
 
   @impl true
   def init(opts) do
-    resource_types = Keyword.get(opts, :resource_types, @valid_resource_types)
+    resource_types = Keyword.get(opts, :resource_types, [:a, :aaaa])
 
     case Keyword.fetch(opts, :query) do
       {:ok, :ignore} ->
