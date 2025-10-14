@@ -37,49 +37,6 @@ defmodule DNSCluster do
   use GenServer
   require Logger
 
-  defmodule Resolver do
-    @moduledoc false
-
-    require Record
-    Record.defrecord(:hostent, Record.extract(:hostent, from_lib: "kernel/include/inet.hrl"))
-
-    def basename(node_name) when is_atom(node_name) do
-      [basename, _] = String.split(to_string(node_name), "@")
-      basename
-    end
-
-    def connect_node(node_name) when is_atom(node_name), do: Node.connect(node_name)
-
-    def list_nodes, do: Node.list(:visible)
-
-    def lookup(query, type) when is_binary(query) and type in [:a, :aaaa] do
-      case :inet_res.getbyname(~c"#{query}", type) do
-        {:ok, hostent(h_addr_list: addr_list)} -> addr_list
-        {:error, _} -> []
-      end
-    end
-
-    def lookup(query, type) when is_binary(query) and type in [:srv] do
-      case :inet_res.getbyname(~c"#{query}", type) do
-        {:ok, hostent(h_addr_list: srv_list)} ->
-          lookup_hosts(srv_list)
-
-        {:error, _} ->
-          []
-      end
-    end
-
-    defp lookup_hosts(srv_list) do
-      srv_list
-      |> Enum.flat_map(fn {_prio, _weight, _port, host_name} ->
-        case :inet.gethostbyname(host_name) do
-          {:ok, hostent(h_addr_list: addr_list)} -> addr_list
-          {:error, _} -> []
-        end
-      end)
-    end
-  end
-
   @doc ~S"""
   Starts DNS based cluster discovery.
 
@@ -112,24 +69,18 @@ defmodule DNSCluster do
 
   @impl true
   def init(opts) do
-    resource_types = Keyword.get(opts, :resource_types, [:a, :aaaa])
-
     case Keyword.fetch(opts, :query) do
       {:ok, :ignore} ->
         :ignore
 
       {:ok, query} ->
-        if not valid_query?(query) do
-          raise ArgumentError,
-                "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
-        end
+        validate_query!(query)
 
-        if not valid_resource_types?(resource_types) do
-          raise ArgumentError,
-                "expected :resource_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(resource_types)}"
-        end
+        resource_types = Keyword.get(opts, :resource_types, [:a, :aaaa])
+        validate_resource_types!(resource_types)
 
         warn_on_invalid_dist()
+
         resolver = Keyword.get(opts, :resolver, Resolver)
 
         state = %{
@@ -198,43 +149,40 @@ defmodule DNSCluster do
   end
 
   defp discover_ips(%{resolver: resolver, query: queries, resource_types: resource_types} = state) do
-    resource_types
-    |> Enum.flat_map(fn type ->
-      Enum.flat_map(queries, fn query ->
-        {basename, query} =
-          case query do
-            {basename, query} ->
-              # use the user-specified basename
-              {basename, query}
-
-            query when is_binary(query) ->
-              # no basename specified, use host basename
-              {state.basename, query}
-          end
-
-        for addr <- resolver.lookup(query, type) do
-          {basename, addr}
-        end
-      end)
-    end)
+    for resource_type <- resource_types,
+        query <- queries,
+        basename = basename_from_query_or_state(query, state),
+        addr <- resolver.lookup(query, resource_type) do
+      {basename, addr}
+    end
     |> Enum.uniq()
     |> Enum.map(fn {basename, addr} -> {basename, to_string(:inet.ntoa(addr))} end)
   end
 
-  defp valid_query?(list) do
-    list
+  defp basename_from_query_or_state({basename, _query}, _state), do: basename
+  defp basename_from_query_or_state(_query, %{basename: basename}), do: basename
+
+  defp validate_query!(query) do
+    query
     |> List.wrap()
-    |> Enum.all?(fn
-      string when is_binary(string) -> true
-      {basename, query} when is_binary(basename) and is_binary(query) -> true
-      _ -> false
+    |> Enum.each(fn
+      string when is_binary(string) ->
+        true
+
+      {basename, query} when is_binary(basename) and is_binary(query) ->
+        true
+
+      _ ->
+        raise ArgumentError,
+              "expected :query to be a string, {basename, query}, or list, got: #{inspect(query)}"
     end)
   end
 
-  defp valid_resource_types?([]), do: false
-
-  defp valid_resource_types?(resource_types) do
-    resource_types -- @valid_resource_types == []
+  defp validate_resource_types!(resource_types) do
+    if resource_types == [] or resource_types -- @valid_resource_types != [] do
+      raise ArgumentError,
+            "expected :resource_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(resource_types)}"
+    end
   end
 
   defp warn_on_invalid_dist do
