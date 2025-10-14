@@ -25,13 +25,20 @@ children = [
 ]
 ```
 
+Then in your config file, add:
+
+```elixir
+config :my_app, :dns_cluster_query, ["app.internal"]
+```
+
 If you are deploying with Elixir releases, the release must be set to support longnames and
-the node must be named. These can be set in your `rel/env.sh.eex` file:
+the node must be named, using their IP address by default. These can be set in your
+`rel/env.sh.eex` file:
 
 ```sh
 #!/bin/sh
 export RELEASE_DISTRIBUTION=name
-export RELEASE_NODE="myapp@fully-qualified-host-or-ip"
+export RELEASE_NODE="myapp@fully-qualified-ip"
 ```
 
 By default, nodes from the same release will have the same cookie. If you want different
