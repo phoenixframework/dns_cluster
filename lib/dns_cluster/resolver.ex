@@ -13,30 +13,36 @@ defmodule DNSCluster.Resolver do
 
   def list_nodes, do: Node.list(:visible)
 
-  def lookup(query, type) when is_binary(query) and type in [:a, :aaaa] do
-    case :inet_res.getbyname(~c"#{query}", type) do
-      {:ok, hostent(h_addr_list: addr_list)} -> addr_list
-      {:error, _} -> []
-    end
+  def lookup(query, {:srv, :hostnames}), do: lookup_by_name(query, :srv)
+
+  def lookup(query, {:srv, :ips}) do
+    query
+    |> lookup_by_name(:srv)
+    |> Enum.flat_map(&lookup_host_by_name/1)
   end
 
-  def lookup(query, type) when is_binary(query) and type in [:srv] do
-    case :inet_res.getbyname(~c"#{query}", type) do
-      {:ok, hostent(h_addr_list: srv_list)} ->
-        lookup_hosts(srv_list)
+  def lookup(query, resource_type) when resource_type in [:a, :aaaa] do
+    lookup_by_name(query, resource_type)
+  end
 
-      {:error, _} ->
+  defp lookup_by_name(query, resource_type) do
+    case :inet_res.getbyname(~c"#{query}", resource_type) do
+      {:ok, hostent(h_addr_list: addr_list)} ->
+        if resource_type == :srv do
+          for {_prio, _weight, _port, address} <- addr_list, do: address
+        else
+          addr_list
+        end
+
+      {:error, _reason} ->
         []
     end
   end
 
-  defp lookup_hosts(srv_list) do
-    srv_list
-    |> Enum.flat_map(fn {_prio, _weight, _port, host_name} ->
-      case :inet.gethostbyname(host_name) do
-        {:ok, hostent(h_addr_list: addr_list)} -> addr_list
-        {:error, _} -> []
-      end
-    end)
+  defp lookup_host_by_name(query) do
+    case :inet_res.gethostbyname(query) do
+      {:ok, hostent(h_addr_list: addr_list)} -> addr_list
+      {:error, _reason} -> []
+    end
   end
 end

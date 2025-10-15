@@ -51,7 +51,8 @@ defmodule DNSCluster do
       differs between nodes, a tuple of `{basename, query}` can be provided as well.
       The value `:ignore` can be used to ignore starting the DNSCluster.
     * `:resource_types` - the resource record types that are used for node discovery.
-      Defaults to `[:a, :aaaa]` and also supports the `:srv` type.
+      Defaults to `[:a, :aaaa]` and also supports `{:srv, :ips}`, `{:srv, :hostnames}` and
+      `:srv` (same as `{:srv, :ips}`) type.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
       Defaults to `10_000`.
@@ -68,7 +69,7 @@ defmodule DNSCluster do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
-  @valid_resource_types [:a, :aaaa, :srv]
+  @valid_resource_types [:a, :aaaa, :srv, {:srv, :ips}, {:srv, :hostnames}]
 
   @impl true
   def init(opts) do
@@ -79,7 +80,11 @@ defmodule DNSCluster do
       {:ok, query} ->
         validate_query!(query)
 
-        resource_types = Keyword.get(opts, :resource_types, [:a, :aaaa])
+        resource_types =
+          opts
+          |> Keyword.get(:resource_types, [:a, :aaaa])
+          |> normalize_old_srv_resource_type()
+
         validate_resource_types!(resource_types)
 
         warn_on_invalid_dist()
@@ -161,11 +166,21 @@ defmodule DNSCluster do
       {basename, addr}
     end
     |> Enum.uniq()
-    |> Enum.map(fn {basename, addr} -> {basename, to_string(:inet.ntoa(addr))} end)
+    |> Enum.map(fn
+      {basename, ip} when is_tuple(ip) -> {basename, to_string(:inet.ntoa(ip))}
+      {basename, hostname} -> {basename, hostname}
+    end)
   end
 
   defp basename_from_query_or_state({basename, _query}, _state), do: basename
   defp basename_from_query_or_state(_query, %{basename: basename}), do: basename
+
+  defp normalize_old_srv_resource_type(resource_types) do
+    Enum.map(resource_types, fn
+      :srv -> {:srv, :ips}
+      resource_type -> resource_type
+    end)
+  end
 
   defp validate_query!(query) do
     query
@@ -186,7 +201,7 @@ defmodule DNSCluster do
   defp validate_resource_types!(resource_types) do
     if resource_types == [] or resource_types -- @valid_resource_types != [] do
       raise ArgumentError,
-            "expected :resource_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(resource_types)}"
+            "expected :resource_types to be a subset of #{inspect(@valid_resource_types)}, got: #{inspect(resource_types)}"
     end
   end
 
