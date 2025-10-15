@@ -35,6 +35,9 @@ defmodule DNSCluster do
   [libcluster](https://hexdocs.pm/libcluster) library.
   """
   use GenServer
+
+  alias DNSCluster.Resolver
+
   require Logger
 
   @doc ~S"""
