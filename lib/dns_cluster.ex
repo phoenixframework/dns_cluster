@@ -97,7 +97,7 @@ defmodule DNSCluster do
           resolver: resolver
         }
 
-        {:ok, state, {:continue, :discover_ips}}
+        {:ok, state, {:continue, :discover_addresses}}
 
       :error ->
         raise ArgumentError, "missing required :query option in #{inspect(opts)}"
@@ -105,12 +105,12 @@ defmodule DNSCluster do
   end
 
   @impl true
-  def handle_continue(:discover_ips, state) do
+  def handle_continue(:discover_addresses, state) do
     {:noreply, do_discovery(state)}
   end
 
   @impl true
-  def handle_info(:discover_ips, state) do
+  def handle_info(:discover_addresses, state) do
     {:noreply, do_discovery(state)}
   end
 
@@ -123,11 +123,11 @@ defmodule DNSCluster do
   defp connect_new_nodes(%{resolver: resolver, connect_timeout: timeout} = state) do
     node_names = for name <- resolver.list_nodes(), into: MapSet.new(), do: to_string(name)
 
-    ips = discover_ips(state)
+    addresses = discover_addresses(state)
 
     _results =
-      ips
-      |> Enum.map(fn {basename, ip} -> "#{basename}@#{ip}" end)
+      addresses
+      |> Enum.map(fn {basename, address} -> "#{basename}@#{address}" end)
       |> Enum.filter(fn node_name -> !Enum.member?(node_names, node_name) end)
       |> Task.async_stream(
         fn new_name ->
@@ -135,7 +135,7 @@ defmodule DNSCluster do
             log(state, "#{node()} connected to #{new_name}")
           end
         end,
-        max_concurrency: max(1, length(ips)),
+        max_concurrency: max(1, length(addresses)),
         timeout: timeout
       )
       |> Enum.to_list()
@@ -148,10 +148,12 @@ defmodule DNSCluster do
   end
 
   defp schedule_next_poll(state) do
-    %{state | poll_timer: Process.send_after(self(), :discover_ips, state.interval)}
+    %{state | poll_timer: Process.send_after(self(), :discover_addresses, state.interval)}
   end
 
-  defp discover_ips(%{resolver: resolver, query: queries, resource_types: resource_types} = state) do
+  defp discover_addresses(
+         %{resolver: resolver, query: queries, resource_types: resource_types} = state
+       ) do
     for resource_type <- resource_types,
         query <- queries,
         basename = basename_from_query_or_state(query, state),
