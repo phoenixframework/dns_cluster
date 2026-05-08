@@ -42,6 +42,56 @@ defmodule DNSClusterTest do
     [:"app@#{@ips.already_known}"]
   end
 
+  defmodule QueryRecorderResolver do
+    def basename(_node_name), do: "app"
+    def connect_node(_node_name), do: false
+    def list_nodes, do: []
+
+    def lookup(query, type) do
+      send(DNSClusterTest, {:lookup, query, type})
+      []
+    end
+  end
+
+  defmodule LookupOptionsResolver do
+    def basename(_node_name), do: "app"
+    def connect_node(_node_name), do: false
+    def list_nodes, do: []
+
+    def lookup(query, type, opts) do
+      send(DNSClusterTest, {:lookup, query, type, opts})
+      []
+    end
+  end
+
+  defmodule PreserveResolver do
+    @a_ip {10, 77, 1, 10}
+    @srv_ip {10, 77, 1, 11}
+    @srv_hosts [
+      "node-1.nodes.example-cluster.internal",
+      ~c"node-2.nodes.example-cluster.internal"
+    ]
+
+    def basename(_node_name), do: "app"
+    def list_nodes, do: []
+
+    def connect_node(node_name) do
+      send(DNSClusterTest, {:try_connect, node_name})
+      true
+    end
+
+    def lookup(_query, :a, _opts), do: [@a_ip]
+    def lookup(_query, :aaaa, _opts), do: []
+
+    def lookup(_query, :srv, opts) do
+      if Keyword.get(opts, :preserve_srv_targets, false) do
+        @srv_hosts
+      else
+        [@srv_ip]
+      end
+    end
+  end
+
   defp wait_for_node_discovery(cluster) do
     :sys.get_state(cluster)
     :ok
@@ -131,11 +181,144 @@ defmodule DNSClusterTest do
                )
     end
 
+    test "tuple query sends only the DNS query string to the resolver", config do
+      Process.register(self(), __MODULE__)
+
+      {:ok, cluster} =
+        start_supervised(
+          {DNSCluster,
+           name: config.test,
+           query: {"specified", "app.internal"},
+           resource_types: [:a],
+           resolver: QueryRecorderResolver}
+        )
+
+      wait_for_node_discovery(cluster)
+
+      assert_receive {:lookup, "app.internal", :a}
+      refute_receive {:lookup, {"specified", "app.internal"}, :a}
+      refute_receive _
+    end
+
     test "query can't be other terms", config do
       for bad <- [1234, :atom, %{a: 1}, [["query"]]] do
         assert_raise RuntimeError, ~r/expected :query to be a string/, fn ->
           start_supervised!({DNSCluster, name: config.test, query: bad, resolver: __MODULE__})
         end
+      end
+    end
+  end
+
+  describe "preserve_srv_targets" do
+    test "uses SRV target hostnames in node names", config do
+      Process.register(self(), __MODULE__)
+
+      {:ok, cluster} =
+        start_supervised(
+          {DNSCluster,
+           name: config.test,
+           query: "_nodes._tcp.nodes.example-cluster.internal",
+           resource_types: [:srv],
+           preserve_srv_targets: true,
+           resolver: PreserveResolver}
+        )
+
+      wait_for_node_discovery(cluster)
+
+      assert_receive {:try_connect, :"app@node-1.nodes.example-cluster.internal"}
+      assert_receive {:try_connect, :"app@node-2.nodes.example-cluster.internal"}
+      refute_receive _
+    end
+
+    test "uses specified basename with preserved SRV target hostnames", config do
+      Process.register(self(), __MODULE__)
+
+      {:ok, cluster} =
+        start_supervised(
+          {DNSCluster,
+           name: config.test,
+           query: {"specified", "_nodes._tcp.nodes.example-cluster.internal"},
+           resource_types: [:srv],
+           preserve_srv_targets: true,
+           resolver: PreserveResolver}
+        )
+
+      wait_for_node_discovery(cluster)
+
+      assert_receive {:try_connect, :"specified@node-1.nodes.example-cluster.internal"}
+      assert_receive {:try_connect, :"specified@node-2.nodes.example-cluster.internal"}
+      refute_receive _
+    end
+
+    test "continues using resolved IP host parts for SRV by default", config do
+      Process.register(self(), __MODULE__)
+
+      {:ok, cluster} =
+        start_supervised(
+          {DNSCluster,
+           name: config.test,
+           query: "_nodes._tcp.nodes.example-cluster.internal",
+           resource_types: [:srv],
+           resolver: PreserveResolver}
+        )
+
+      wait_for_node_discovery(cluster)
+
+      assert_receive {:try_connect, :"app@10.77.1.11"}
+      refute_receive _
+    end
+
+    test "only changes SRV host handling when mixed with A records", config do
+      Process.register(self(), __MODULE__)
+
+      {:ok, cluster} =
+        start_supervised(
+          {DNSCluster,
+           name: config.test,
+           query: "app.internal",
+           resource_types: [:a, :srv],
+           preserve_srv_targets: true,
+           resolver: PreserveResolver}
+        )
+
+      wait_for_node_discovery(cluster)
+
+      assert_receive {:try_connect, :"app@10.77.1.10"}
+      assert_receive {:try_connect, :"app@node-1.nodes.example-cluster.internal"}
+      assert_receive {:try_connect, :"app@node-2.nodes.example-cluster.internal"}
+      refute_receive _
+    end
+
+    test "passes preserve option to lookup/3 resolvers", config do
+      Process.register(self(), __MODULE__)
+
+      {:ok, cluster} =
+        start_supervised(
+          {DNSCluster,
+           name: config.test,
+           query: "_nodes._tcp.nodes.example-cluster.internal",
+           resource_types: [:srv],
+           preserve_srv_targets: true,
+           resolver: LookupOptionsResolver}
+        )
+
+      wait_for_node_discovery(cluster)
+
+      assert_receive {:lookup, "_nodes._tcp.nodes.example-cluster.internal", :srv,
+                      [preserve_srv_targets: true]}
+
+      refute_receive _
+    end
+
+    test "preserve_srv_targets must be a boolean", config do
+      assert_raise RuntimeError, ~r/expected :preserve_srv_targets to be a boolean/, fn ->
+        start_supervised!(
+          {DNSCluster,
+           name: config.test,
+           query: "app.internal",
+           preserve_srv_targets: :yes,
+           resolver: __MODULE__}
+        )
       end
     end
   end

@@ -13,21 +13,31 @@ defmodule DNSCluster.Resolver do
 
   def list_nodes, do: Node.list(:visible)
 
-  def lookup(query, type) when is_binary(query) and type in [:a, :aaaa] do
+  def lookup(query, type, opts \\ [])
+
+  def lookup(query, type, _opts) when is_binary(query) and type in [:a, :aaaa] do
     case :inet_res.getbyname(~c"#{query}", type) do
       {:ok, hostent(h_addr_list: addr_list)} -> addr_list
       {:error, _} -> []
     end
   end
 
-  def lookup(query, type) when is_binary(query) and type in [:srv] do
+  def lookup(query, type, opts) when is_binary(query) and type in [:srv] do
     case :inet_res.getbyname(~c"#{query}", type) do
       {:ok, hostent(h_addr_list: srv_list)} ->
-        lookup_hosts(srv_list)
+        if Keyword.get(opts, :preserve_srv_targets, false) do
+          srv_targets(srv_list)
+        else
+          lookup_hosts(srv_list)
+        end
 
       {:error, _} ->
         []
     end
+  end
+
+  defp srv_targets(srv_list) do
+    Enum.map(srv_list, fn {_prio, _weight, _port, host_name} -> to_string(host_name) end)
   end
 
   defp lookup_hosts(srv_list) do

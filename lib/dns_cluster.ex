@@ -17,8 +17,25 @@ defmodule DNSCluster do
 
   Sometimes you might want to cluster apps with different domain names. Just pass a list of queries
   for this. For instance: `["app-one.internal", "app-two.internal", {"other-basename", "other.internal"}]`.
-  Remember, all nodes need to share the same secret cookie to connect successfully, and their FQDN
-  must be their IP address (either IPv4 or IPv6).
+  Remember, all nodes need to share the same secret cookie to connect successfully, and by default
+  their node host must be their IP address (either IPv4 or IPv6).
+
+  ## SRV target hostnames
+
+  By default, SRV records are resolved to IP addresses before node names are built. If your nodes
+  use the SRV target hostnames as their longname hosts, set `:preserve_srv_targets` to `true`.
+  This makes DNSCluster connect to `basename@srv-target-hostname` and lets Erlang distribution
+  resolve the hostname when connecting.
+
+  For example, if `_nodes._tcp.nodes.example-cluster.internal` has an SRV target of
+  `node-1.nodes.example-cluster.internal`, this configuration:
+
+      {DNSCluster,
+       query: {"my_app", "_nodes._tcp.nodes.example-cluster.internal"},
+       resource_types: [:srv],
+       preserve_srv_targets: true}
+
+  will try to connect to `:"my_app@node-1.nodes.example-cluster.internal"`.
 
   ## Examples
 
@@ -52,6 +69,9 @@ defmodule DNSCluster do
       The value `:ignore` can be used to ignore starting the DNSCluster.
     * `:resource_types` - the resource record types that are used for node discovery.
       Defaults to `[:a, :aaaa]` and also supports the `:srv` type.
+    * `:preserve_srv_targets` - when `true`, SRV record target hostnames are used
+      directly in discovered node names instead of resolving them to IP addresses.
+      Defaults to `false`.
     * `:interval` - the millisec interval between DNS queries. Defaults to `5000`.
     * `:connect_timeout` - the millisec timeout to allow discovered nodes to connect.
       Defaults to `10_000`.
@@ -81,6 +101,8 @@ defmodule DNSCluster do
 
         resource_types = Keyword.get(opts, :resource_types, [:a, :aaaa])
         validate_resource_types!(resource_types)
+        preserve_srv_targets = Keyword.get(opts, :preserve_srv_targets, false)
+        validate_preserve_srv_targets!(preserve_srv_targets)
 
         warn_on_invalid_dist()
 
@@ -91,13 +113,14 @@ defmodule DNSCluster do
           basename: resolver.basename(node()),
           query: List.wrap(query),
           resource_types: resource_types,
+          preserve_srv_targets: preserve_srv_targets,
           log: Keyword.get(opts, :log, false),
           poll_timer: nil,
           connect_timeout: Keyword.get(opts, :connect_timeout, 10_000),
           resolver: resolver
         }
 
-        {:ok, state, {:continue, :discover_ips}}
+        {:ok, state, {:continue, :discover_hosts}}
 
       :error ->
         raise ArgumentError, "missing required :query option in #{inspect(opts)}"
@@ -105,12 +128,12 @@ defmodule DNSCluster do
   end
 
   @impl true
-  def handle_continue(:discover_ips, state) do
+  def handle_continue(:discover_hosts, state) do
     {:noreply, do_discovery(state)}
   end
 
   @impl true
-  def handle_info(:discover_ips, state) do
+  def handle_info(:discover_hosts, state) do
     {:noreply, do_discovery(state)}
   end
 
@@ -123,11 +146,11 @@ defmodule DNSCluster do
   defp connect_new_nodes(%{resolver: resolver, connect_timeout: timeout} = state) do
     node_names = for name <- resolver.list_nodes(), into: MapSet.new(), do: to_string(name)
 
-    ips = discover_ips(state)
+    hosts = discover_hosts(state)
 
     _results =
-      ips
-      |> Enum.map(fn {basename, ip} -> "#{basename}@#{ip}" end)
+      hosts
+      |> Enum.map(fn {basename, host} -> "#{basename}@#{host}" end)
       |> Enum.filter(fn node_name -> !Enum.member?(node_names, node_name) end)
       |> Task.async_stream(
         fn new_name ->
@@ -135,7 +158,7 @@ defmodule DNSCluster do
             log(state, "#{node()} connected to #{new_name}")
           end
         end,
-        max_concurrency: max(1, length(ips)),
+        max_concurrency: max(1, length(hosts)),
         timeout: timeout
       )
       |> Enum.to_list()
@@ -148,22 +171,48 @@ defmodule DNSCluster do
   end
 
   defp schedule_next_poll(state) do
-    %{state | poll_timer: Process.send_after(self(), :discover_ips, state.interval)}
+    %{state | poll_timer: Process.send_after(self(), :discover_hosts, state.interval)}
   end
 
-  defp discover_ips(%{resolver: resolver, query: queries, resource_types: resource_types} = state) do
+  defp discover_hosts(
+         %{
+           resolver: resolver,
+           query: queries,
+           resource_types: resource_types,
+           preserve_srv_targets: preserve_srv_targets
+         } = state
+       ) do
     for resource_type <- resource_types,
         query <- queries,
         basename = basename_from_query_or_state(query, state),
-        addr <- resolver.lookup(query, resource_type) do
-      {basename, addr}
+        lookup_query = query_from_query(query),
+        host <-
+          resolver_lookup(resolver, lookup_query, resource_type,
+            preserve_srv_targets: preserve_srv_targets
+          ) do
+      {basename, host}
     end
+    |> Enum.map(fn {basename, host} -> {basename, host_to_string(host)} end)
     |> Enum.uniq()
-    |> Enum.map(fn {basename, addr} -> {basename, to_string(:inet.ntoa(addr))} end)
   end
 
   defp basename_from_query_or_state({basename, _query}, _state), do: basename
   defp basename_from_query_or_state(_query, %{basename: basename}), do: basename
+
+  defp query_from_query({_basename, query}), do: query
+  defp query_from_query(query), do: query
+
+  defp resolver_lookup(resolver, query, resource_type, opts) do
+    if function_exported?(resolver, :lookup, 3) do
+      resolver.lookup(query, resource_type, opts)
+    else
+      resolver.lookup(query, resource_type)
+    end
+  end
+
+  defp host_to_string(addr) when is_tuple(addr), do: to_string(:inet.ntoa(addr))
+  defp host_to_string(host) when is_binary(host), do: host
+  defp host_to_string(host) when is_list(host), do: to_string(host)
 
   defp validate_query!(query) do
     query
@@ -185,6 +234,13 @@ defmodule DNSCluster do
     if resource_types == [] or resource_types -- @valid_resource_types != [] do
       raise ArgumentError,
             "expected :resource_types to be a subset of [:a, :aaaa, :srv], got: #{inspect(resource_types)}"
+    end
+  end
+
+  defp validate_preserve_srv_targets!(preserve_srv_targets) do
+    if preserve_srv_targets not in [true, false] do
+      raise ArgumentError,
+            "expected :preserve_srv_targets to be a boolean, got: #{inspect(preserve_srv_targets)}"
     end
   end
 

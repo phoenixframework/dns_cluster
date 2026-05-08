@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+  * Add an opt-in `:preserve_srv_targets` option for SRV records, allowing SRV
+    target hostnames to be used directly in discovered node names
+
 ## 0.2.0 (2025-03-04)
   * Support multiple DNS queries
 
