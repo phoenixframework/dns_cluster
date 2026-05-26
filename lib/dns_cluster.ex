@@ -193,7 +193,7 @@ defmodule DNSCluster do
     net_state = if function_exported?(:net_kernel, :get_state, 0), do: :net_kernel.get_state()
 
     cond do
-      !net_state ->
+      !is_map(net_state) ->
         :ok
 
       net_state.started == :no and release? ->
