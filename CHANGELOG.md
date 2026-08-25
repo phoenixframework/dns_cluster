@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.0 (2026-08-25)
+  * Support srv cluster queries
+
 ## 0.2.0 (2025-03-04)
   * Support multiple DNS queries
 
