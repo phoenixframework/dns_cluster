@@ -1,6 +1,19 @@
 defmodule DNSClusterTest do
   use ExUnit.Case
 
+  defmodule QueryRecorder do
+    @moduledoc false
+
+    def basename(_node_name), do: "app"
+    def connect_node(_node_name), do: false
+    def list_nodes, do: []
+
+    def lookup(query, _type) when is_binary(query) do
+      send(__MODULE__, {:lookup, query})
+      []
+    end
+  end
+
   @ips %{
     already_known: ~c"fdaa:0:36c9:a7b:db:400e:1352:1",
     new: ~c"fdaa:0:36c9:a7b:db:400e:1352:2",
@@ -29,7 +42,7 @@ defmodule DNSClusterTest do
 
   def basename(_node_name), do: "app"
 
-  def lookup(_query, _type) do
+  def lookup(query, _type) when is_binary(query) do
     {:ok, dns_ip1} = :inet.parse_address(@ips.already_known)
     {:ok, dns_ip2} = :inet.parse_address(@ips.new)
     {:ok, dns_ip3} = :inet.parse_address(@ips.no_connect_diff_base)
@@ -99,6 +112,24 @@ defmodule DNSClusterTest do
     assert_receive {:try_connect, ^new_node}
     refute_receive {:try_connect, ^no_connect_node}
     refute_receive _
+  end
+
+  test "looks up the hostname of a {basename, query} tuple, not the tuple", config do
+    Process.register(self(), QueryRecorder)
+
+    {:ok, cluster} =
+      start_supervised(
+        {DNSCluster,
+         name: config.test,
+         query: ["app.internal", {"specified", "other.internal"}],
+         resource_types: [:a],
+         resolver: QueryRecorder}
+      )
+
+    wait_for_node_discovery(cluster)
+
+    assert_receive {:lookup, "app.internal"}
+    assert_receive {:lookup, "other.internal"}
   end
 
   test "query with :ignore does not start child" do
