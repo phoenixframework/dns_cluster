@@ -154,16 +154,16 @@ defmodule DNSCluster do
   defp discover_ips(%{resolver: resolver, query: queries, resource_types: resource_types} = state) do
     for resource_type <- resource_types,
         query <- queries,
-        basename = basename_from_query_or_state(query, state),
-        addr <- resolver.lookup(query, resource_type) do
+        {basename, hostname} = basename_and_hostname(query, state),
+        addr <- resolver.lookup(hostname, resource_type) do
       {basename, addr}
     end
     |> Enum.uniq()
     |> Enum.map(fn {basename, addr} -> {basename, to_string(:inet.ntoa(addr))} end)
   end
 
-  defp basename_from_query_or_state({basename, _query}, _state), do: basename
-  defp basename_from_query_or_state(_query, %{basename: basename}), do: basename
+  defp basename_and_hostname({basename, hostname}, _state), do: {basename, hostname}
+  defp basename_and_hostname(hostname, %{basename: basename}), do: {basename, hostname}
 
   defp validate_query!(query) do
     query
