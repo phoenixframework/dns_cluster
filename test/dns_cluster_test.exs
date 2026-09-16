@@ -172,7 +172,8 @@ defmodule DNSClusterTest do
   end
 
   describe "resource_types" do
-    test "resource_types can be a subset of [:a, :aaaa, :srv]", config do
+    test "resource_types can be a subset of [:a, :aaaa, :srv, {:srv, :ips}, {:srv, :hostnames}]",
+         config do
       assert {:ok, _cluster} =
                start_supervised(
                  {DNSCluster,
@@ -183,9 +184,10 @@ defmodule DNSClusterTest do
                )
     end
 
-    test "resource_types can't be outside of [:a, :aaaa, :srv]", config do
+    test "resource_types can't be outside of [:a, :aaaa, :srv, {:srv, :ips}, {:srv, :hostnames}]",
+         config do
       assert_raise RuntimeError,
-                   ~r/expected :resource_types to be a subset of \[:a, :aaaa, :srv\]/,
+                   ~r/expected :resource_types to be a subset of \[:a, :aaaa, :srv, {:srv, :ips}, {:srv, :hostnames}\]/,
                    fn ->
                      start_supervised!(
                        {DNSCluster,
@@ -199,7 +201,7 @@ defmodule DNSClusterTest do
 
     test "resource_types can't be empty", config do
       assert_raise RuntimeError,
-                   ~r/expected :resource_types to be a subset of \[:a, :aaaa, :srv\]/,
+                   ~r/expected :resource_types to be a subset of \[:a, :aaaa, :srv, {:srv, :ips}, {:srv, :hostnames}\]/,
                    fn ->
                      start_supervised!(
                        {DNSCluster,
