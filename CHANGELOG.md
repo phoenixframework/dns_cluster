@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.1 (2026-10-01)
+  * Properly look up the hostname of a {basename, query} tuple
+
 ## 0.3.0 (2026-08-25)
   * Support srv cluster queries
 
