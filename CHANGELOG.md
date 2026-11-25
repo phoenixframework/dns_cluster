@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+  * Log a warning when a DNS lookup fails
+
 ## 0.3.1 (2026-10-01)
   * Properly look up the hostname of a {basename, query} tuple
 
