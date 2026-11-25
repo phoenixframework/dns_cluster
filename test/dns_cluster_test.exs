@@ -60,6 +60,24 @@ defmodule DNSClusterTest do
     :ok
   end
 
+  test "resolver warns when a lookup fails" do
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert DNSCluster.Resolver.addr_list({:error, :nxdomain}, "typo.internal", :a) == []
+      end)
+
+    assert log =~ "DNSCluster could not resolve \"typo.internal\" (:a): :nxdomain"
+  end
+
+  test "resolver does not warn when the name has no records of the type" do
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert DNSCluster.Resolver.addr_list({:error, :nodata}, "app.internal", :aaaa) == []
+      end)
+
+    assert log == ""
+  end
+
   test "discovers nodes", config do
     Process.register(self(), __MODULE__)
 
